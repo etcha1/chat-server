@@ -1,0 +1,28 @@
+<h1>Chat</h1>
+
+<form action="/message" method="POST">
+    <div>
+        <label for="sender">Sender</label>
+        <input type="text" name="sender" required>
+    </div>
+    <div>
+        <textarea name="body" rows="20" cols="80"></textarea>
+    </div>
+    <div>
+        <input type="submit" value="Send">
+    </div>
+</form>
+
+<script type="text/javascript">
+window.onload = function () {
+    const socket = new WebSocket("ws://localhost:8000/ws");
+
+    socket.onmessage = function(event) {
+        console.log(event.data);
+    };
+
+    socket.onopen = (event) => {
+        socket.send('Hello Server!'); 
+    };
+};
+</script>
