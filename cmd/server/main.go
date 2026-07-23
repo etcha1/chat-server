@@ -4,13 +4,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/etcha1/chat-server/internal/websocket"
+	"github.com/etcha1/chat-server/internal/server"
 )
 
 func main() {
 	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		websocket.ServeWs(w, r)
+		server.ServeWs(w, r)
 	})
 	err := http.ListenAndServe(":8000", nil)
 	if err != nil {

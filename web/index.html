@@ -1,12 +1,16 @@
 <h1>Chat</h1>
 
-<form action="/message" method="POST">
+<div>Messages</div>
+<div id="messages"></div>
+<hr>
+<form id="message-form" action="/message" method="POST">
     <div>
         <label for="sender">Sender</label>
         <input type="text" name="sender" required>
     </div>
     <div>
-        <textarea name="body" rows="20" cols="80"></textarea>
+        <label for="message">Message</label>
+        <textarea name="message" rows="20" cols="80" required></textarea>
     </div>
     <div>
         <input type="submit" value="Send">
@@ -18,11 +22,24 @@ window.onload = function () {
     const socket = new WebSocket("ws://localhost:8000/ws");
 
     socket.onmessage = function(event) {
-        console.log(event.data);
+        const message = JSON.parse(event.data);
+        console.log("Received message:", message);
+        const messagesDiv = document.getElementById("messages");
+        messagesDiv.innerHTML += `<p><strong>${message.username}</strong>: ${message.content}</p>`;
     };
 
-    socket.onopen = (event) => {
-        socket.send('Hello Server!'); 
-    };
+    document.getElementById("message-form").addEventListener("submit", function(event) {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        const data = {
+            Username: formData.get("sender"),
+            Content: formData.get("message"),
+            Timestamp: new Date()
+        };
+        socket.send(JSON.stringify(data));
+
+        // Clear the message input
+        document.querySelector('textarea[name="message"]').value = '';
+    });
 };
 </script>

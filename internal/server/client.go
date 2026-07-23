@@ -1,9 +1,11 @@
-package websocket
+package server
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 
+	"github.com/etcha1/chat-server/internal/model"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,8 +23,14 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	hub := InitHub()
+	hub.Register <- conn
+	defer func() {
+		hub.Unregister <- conn
+	}()
+
 	for {
-		messageType, payload, err := conn.ReadMessage()
+		_, payload, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("read error: %v", err)
@@ -31,9 +39,13 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Printf("received message: %s", payload)
-		if err := conn.WriteMessage(messageType, payload); err != nil {
-			log.Printf("write error: %v", err)
+		var message model.Message
+		err = json.Unmarshal(payload, &message)
+		if err != nil {
+			log.Printf("error parsing JSON: %v", err)
 			return
 		}
+
+		GlobalHub.Broadcast <- message
 	}
 }
