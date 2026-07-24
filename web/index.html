@@ -2,17 +2,32 @@
 
 <div>Messages</div>
 <div id="messages"></div>
+<div id="room-status">Current room: none</div>
+<div>
+    <strong>Joined users</strong>
+    <div id="members-count">0</div>
+    <ul id="members-list"></ul>
+</div>
 <hr>
 <form id="message-form" action="/message" method="POST">
     <div>
+        <label for="room">Room</label>
+        <select name="room" id="room" required>
+            <option value="general">General</option>
+            <option value="random">Random</option>
+        </select>
+    </div>
+    <div>
         <label for="sender">Sender</label>
-        <input type="text" name="sender" required>
+        <input type="text" name="sender" id="sender" required>
     </div>
     <div>
         <label for="message">Message</label>
-        <textarea name="message" rows="20" cols="80" required></textarea>
+        <textarea name="message" id="message" rows="20" cols="80" required></textarea>
     </div>
     <div>
+        <button type="button" id="join-room">Join Room</button>
+        <button type="button" id="leave-room">Leave Room</button>
         <input type="submit" value="Send">
     </div>
 </form>
@@ -20,26 +35,124 @@
 <script type="text/javascript">
 window.onload = function () {
     const socket = new WebSocket("ws://localhost:8000/ws");
+    const roomSelect = document.getElementById("room");
+    const senderInput = document.getElementById("sender");
+    const messageInput = document.getElementById("message");
+    const messageForm = document.getElementById("message-form");
+    const joinButton = document.getElementById("join-room");
+    const leaveButton = document.getElementById("leave-room");
+    const roomStatus = document.getElementById("room-status");
+    const membersList = document.getElementById("members-list");
+    const membersCount = document.getElementById("members-count");
+    let activeRoom = null;
+    const members = new Set();
+
+    function buildPayload(type, overrides = {}) {
+        return {
+            type,
+            username: senderInput.value,
+            content: messageInput.value,
+            timestamp: new Date().toISOString(),
+            room: roomSelect.value,
+            ...overrides
+        };
+    }
+
+    function sendPayload(type, overrides = {}) {
+        if (socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        socket.send(JSON.stringify(buildPayload(type, overrides)));
+    }
+
+    function setRoomStatus(room) {
+        roomStatus.textContent = room ? `Current room: ${room}` : "Current room: none";
+    }
+
+    function renderMembers() {
+        membersList.innerHTML = "";
+        const names = Array.from(members).sort();
+        membersCount.textContent = String(names.length);
+
+        if (names.length === 0) {
+            const item = document.createElement("li");
+            item.textContent = "none";
+            membersList.appendChild(item);
+            return;
+        }
+
+        names.forEach(function(name) {
+            const item = document.createElement("li");
+            item.textContent = name;
+            membersList.appendChild(item);
+        });
+    }
+
+    function resetRoomMembers() {
+        members.clear();
+        renderMembers();
+    }
+
+    function joinSelectedRoom() {
+        const room = roomSelect.value;
+        if (!room) {
+            return;
+        }
+
+        if (activeRoom && activeRoom !== room) {
+            sendPayload("leave", { room: activeRoom });
+            resetRoomMembers();
+        }
+
+        activeRoom = room;
+        setRoomStatus(activeRoom);
+        sendPayload("join", { room });
+    }
+
+    socket.onopen = function () {
+        joinSelectedRoom();
+    };
 
     socket.onmessage = function(event) {
         const message = JSON.parse(event.data);
         console.log("Received message:", message);
+
+        if (message.type === "presence") {
+            if (message.content === "left") {
+                members.delete(message.username);
+            } else {
+                members.add(message.username);
+            }
+            renderMembers();
+            return;
+        }
+
         const messagesDiv = document.getElementById("messages");
         messagesDiv.innerHTML += `<p><strong>${message.username}</strong>: ${message.content}</p>`;
     };
 
-    document.getElementById("message-form").addEventListener("submit", function(event) {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        const data = {
-            Username: formData.get("sender"),
-            Content: formData.get("message"),
-            Timestamp: new Date()
-        };
-        socket.send(JSON.stringify(data));
+    joinButton.addEventListener("click", function() {
+        joinSelectedRoom();
+    });
 
-        // Clear the message input
-        document.querySelector('textarea[name="message"]').value = '';
+    leaveButton.addEventListener("click", function() {
+        if (activeRoom) {
+            sendPayload("leave", { room: activeRoom });
+            activeRoom = null;
+            setRoomStatus(null);
+            resetRoomMembers();
+        }
+    });
+
+    roomSelect.addEventListener("change", function() {
+        joinSelectedRoom();
+    });
+
+    messageForm.addEventListener("submit", function(event) {
+        event.preventDefault();
+        sendPayload("message", { content: messageInput.value });
+        messageInput.value = '';
     });
 };
 </script>

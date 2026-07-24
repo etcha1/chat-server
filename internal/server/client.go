@@ -29,6 +29,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		hub.Unregister <- conn
 	}()
 
+	joinedRoom := ""
 	for {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
@@ -46,6 +47,29 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if message.Type == "join" {
+			if message.Room != "" {
+				joinedRoom = message.Room
+				ack := make(chan struct{})
+				hub.JoinRoom <- model.JoinRequest{Conn: conn, Room: joinedRoom, Username: message.Username, Ack: ack}
+				<-ack
+			}
+			continue
+		}
+
+		if message.Type == "leave" {
+			if joinedRoom != "" {
+				ack := make(chan struct{})
+				hub.LeaveRoom <- model.LeaveRequest{Conn: conn, Room: joinedRoom, Ack: ack}
+				<-ack
+				joinedRoom = ""
+			}
+			continue
+		}
+
+		if message.Room == "" && joinedRoom != "" {
+			message.Room = joinedRoom
+		}
 		GlobalHub.Broadcast <- message
 	}
 }
