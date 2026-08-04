@@ -8,13 +8,16 @@ import (
 	"time"
 )
 
+var (
+	loginURL = "http://localhost:3000/login"
+	httpClient = &http.Client{Timeout: 10 * time.Second}
+)
+
 func Login(username, password string) error {
-	url := "http://localhost:3000/login"
+	url := loginURL
 
 	// 1. Initialize a client with a strict timeout to avoid leaking goroutines
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
+	client := httpClient
 
 	payload := strings.NewReader(`{"email":"` + username + `","password":"` + password + `"}`)
 

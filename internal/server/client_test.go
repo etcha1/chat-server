@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,10 @@ import (
 	"time"
 
 	"github.com/etcha1/chat-server/internal/model"
+	"github.com/etcha1/chat-server/internal/repository"
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
+	pgxconn "github.com/jackc/pgx/v5/pgconn"
 )
 
 func resetHubForTests() {
@@ -31,9 +35,43 @@ func drainSocketMessages(t *testing.T, conn *websocket.Conn) {
 	}
 }
 
+type stubQueryExecutor struct {
+	rows pgx.Rows
+}
+
+func (s *stubQueryExecutor) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return s.rows, nil
+}
+
+func (s *stubQueryExecutor) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return nil
+}
+
+func (s *stubQueryExecutor) Exec(ctx context.Context, sql string, args ...any) (pgxconn.CommandTag, error) {
+	return pgxconn.CommandTag{}, nil
+}
+
+type stubRows struct{}
+
+func (s *stubRows) Close() {}
+func (s *stubRows) Err() error { return nil }
+func (s *stubRows) CommandTag() pgxconn.CommandTag { return pgxconn.CommandTag{} }
+func (s *stubRows) FieldDescriptions() []pgxconn.FieldDescription { return nil }
+func (s *stubRows) Next() bool { return false }
+func (s *stubRows) Scan(dest ...any) error { return nil }
+func (s *stubRows) Values() ([]any, error) { return nil, nil }
+func (s *stubRows) RawValues() [][]byte { return nil }
+func (s *stubRows) Conn() *pgx.Conn { return nil }
+
+func newTestMessageRepository() *repository.MessageRepository {
+	return repository.NewMessageRepository(&stubQueryExecutor{rows: &stubRows{}})
+}
+
 func TestServeWsBroadcastsMessagesToAllClients(t *testing.T) {
 	resetHubForTests()
-	server := httptest.NewServer(http.HandlerFunc(ServeWs))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeWs(w, r, newTestMessageRepository())
+	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/"
@@ -76,7 +114,9 @@ func TestServeWsBroadcastsMessagesToAllClients(t *testing.T) {
 
 func TestServeWsRoutesMessagesByRoom(t *testing.T) {
 	resetHubForTests()
-	server := httptest.NewServer(http.HandlerFunc(ServeWs))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeWs(w, r, newTestMessageRepository())
+	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/"
@@ -164,7 +204,9 @@ func TestServeWsRoutesMessagesByRoom(t *testing.T) {
 
 func TestServeWsLeaveRoomStopsReceivingMessages(t *testing.T) {
 	resetHubForTests()
-	server := httptest.NewServer(http.HandlerFunc(ServeWs))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeWs(w, r, newTestMessageRepository())
+	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/"
@@ -239,7 +281,9 @@ func TestServeWsLeaveRoomStopsReceivingMessages(t *testing.T) {
 
 func TestServeWsBroadcastsPresenceUpdatesForRoomMembers(t *testing.T) {
 	resetHubForTests()
-	server := httptest.NewServer(http.HandlerFunc(ServeWs))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServeWs(w, r, newTestMessageRepository())
+	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/"
