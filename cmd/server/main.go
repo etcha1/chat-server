@@ -1,22 +1,35 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
 	"github.com/etcha1/chat-server/internal/auth"
+	"github.com/etcha1/chat-server/internal/database"
+	"github.com/etcha1/chat-server/internal/repository"
 	"github.com/etcha1/chat-server/internal/server"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
+
+	db := database.GetConnection()
+	defer db.Close(context.Background())
+
+	messageRepo := repository.NewMessageRepository(db)
+
 	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/login", serveLogin)
 	http.HandleFunc("/chat", serveChat)
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		server.ServeWs(w, r)
+		server.ServeWs(w, r, messageRepo)
 	})
-	err := http.ListenAndServe(":8000", nil)
-	if err != nil {
+
+	if err := http.ListenAndServe(":8000", nil); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }

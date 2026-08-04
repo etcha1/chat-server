@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/etcha1/chat-server/internal/model"
+	"github.com/etcha1/chat-server/internal/repository"
 	"github.com/gorilla/websocket"
 )
 
@@ -15,7 +16,7 @@ var upgrader = websocket.Upgrader{
 }
 
 // ServeWs handles websocket requests from the peer.
-func ServeWs(w http.ResponseWriter, r *http.Request) {
+func ServeWs(w http.ResponseWriter, r *http.Request, messageRepo *repository.MessageRepository) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -23,7 +24,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	hub := InitHub()
+	hub := InitHub(messageRepo)
 	hub.Register <- conn
 	defer func() {
 		hub.Unregister <- conn

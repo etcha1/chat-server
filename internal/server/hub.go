@@ -1,19 +1,21 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/etcha1/chat-server/internal/model"
+	"github.com/etcha1/chat-server/internal/repository"
 	"github.com/gorilla/websocket"
 )
 
 var GlobalHub *model.Hub
 var once sync.Once
 
-func InitHub() *model.Hub {
+func InitHub(messageRepo *repository.MessageRepository) *model.Hub {
 	once.Do(func() {
 		GlobalHub = &model.Hub{
 			Clients:        make(map[*websocket.Conn]bool),
@@ -28,13 +30,13 @@ func InitHub() *model.Hub {
 			ClientRooms:    make(map[*websocket.Conn]string),
 			ClientUsers:    make(map[*websocket.Conn]string),
 		}
-		go RunHub(GlobalHub)
+		go RunHub(GlobalHub, messageRepo)
 	})
 
 	return GlobalHub
 }
 
-func RunHub(hub *model.Hub) {
+func RunHub(hub *model.Hub, messageRepo *repository.MessageRepository) {
 	for {
 		select {
 		case conn := <-hub.Register:
@@ -67,6 +69,8 @@ func RunHub(hub *model.Hub) {
 						log.Printf("broadcast write error: %v", err)
 						delete(hub.Clients, conn)
 						conn.Close()
+					} else {
+						messageRepo.CreateMessage(context.Background(), &message)
 					}
 				}
 				continue
@@ -78,6 +82,8 @@ func RunHub(hub *model.Hub) {
 						log.Printf("room broadcast write error: %v", err)
 						delete(clients, conn)
 						conn.Close()
+					} else {
+						messageRepo.CreateMessage(context.Background(), &message)
 					}
 				}
 			}
@@ -117,6 +123,26 @@ func RunHub(hub *model.Hub) {
 			}
 			if join.Ack != nil {
 				close(join.Ack)
+			}
+
+			messages, err := messageRepo.GetMessages(context.Background(), join.Room)
+			if err != nil {
+				log.Printf("getMessages error: %v", err)
+				continue
+			}
+			for _, msg := range messages {
+				msg.Type = "message"
+				payload, err := json.Marshal(msg)
+				if err != nil {
+					log.Printf("marshal historical message: %v", err)
+					continue
+				}
+				if err := join.Conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+					log.Printf("historical message write error: %v", err)
+					delete(hub.Rooms[join.Room], join.Conn)
+					join.Conn.Close()
+					break
+				}
 			}
 		case leave := <-hub.LeaveRoom:
 			if currentRoom, ok := hub.ClientRooms[leave.Conn]; ok && currentRoom != "" {
